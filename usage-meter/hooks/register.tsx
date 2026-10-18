@@ -28,9 +28,9 @@ function untilText(resetsAt: string | undefined, now: number): string {
   const d = Math.floor(mins / 1440)
   const h = Math.floor((mins % 1440) / 60)
   const m = mins % 60
-  if (d > 0) return `resets in ${d}d ${h}h`
-  if (h > 0) return `resets in ${h}h ${m}m`
-  return `resets in ${m}m`
+  if (d > 0) return `${d}d ${h}h`
+  if (h > 0) return `${h}h ${m}m`
+  return `${m}m`
 }
 
 function bar(pct: number): string {
