@@ -33,9 +33,9 @@ function untilText(resetsAt: string | undefined, now: number): string {
   return `${m}m`
 }
 
-function bar(pct: number): string {
-  const filled = Math.max(0, Math.min(10, Math.round(pct / 10)))
-  return '█'.repeat(filled) + '░'.repeat(10 - filled)
+function bar(pct: number, cells = 10): string {
+  const filled = Math.max(0, Math.min(cells, Math.round((pct / 100) * cells)))
+  return '█'.repeat(filled) + '░'.repeat(cells - filled)
 }
 
 // Time left = average time per finished step so far x steps left, minus time already spent on
@@ -150,7 +150,7 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const list = await read($, limits)
     const plan = await read($, steps)
-    if (e.props.hasSurvey || (list.length === 0 && plan.length === 0)) return next(e)
+    if (list.length === 0 && plan.length === 0) return next(e)
     const { Box, Text } = $.ui.resolve(e)
     const now = await $.clock.now()
     const sorted = [...list].sort((a, b) => ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind))
@@ -163,19 +163,30 @@ export const register: Register = on => {
       return { key: l.kind, label: NAMES[l.kind] ?? l.kind, pct: l.percentUsed, color, extra: untilText(l.resetsAt, now) }
     })
     if (plan.length > 0) segs.push({ key: 'task', label: 'Task', pct: taskPct, color: MIDNIGHT.purple, extra: taskLeft })
+    // Halves get bars twice as long as thirds, so two segments fill the band like three do.
+    const cells = segs.length <= 2 ? 20 : 10
     // Equal-width segments (flex basis 0, grow 1), each centred between its dividers or the band's edge.
-    return (
+    const ours = (
       <Box key="usage" backgroundColor={MIDNIGHT.bg} paddingX={1} width="100%" flexDirection="row">
         {segs.flatMap((s, i) => [
           ...(i > 0 ? [<Text key={`div-${s.key}`} color={MIDNIGHT.divider}>|</Text>] : []),
           <Box key={s.key} width={0} flexGrow={1} flexDirection="row" justifyContent="center">
             <Text>
               <Text weight="bold" color={s.color}>{s.label} </Text>
-              <Text color={s.color}>{bar(s.pct)} {s.pct}%</Text>
+              <Text color={s.color}>{bar(s.pct, cells)} {s.pct}%</Text>
               {s.extra ? <Text color={MIDNIGHT.muted}>{' ' + s.extra}</Text> : null}
             </Text>
           </Box>,
         ])}
+      </Box>
+    )
+    if (!e.props.hasSurvey) return ours
+    // A survey or question box holds the band: keep it, with the bar above it.
+    const held = await next(e)
+    return (
+      <Box key="usage-wrap" flexDirection="column" width="100%">
+        {ours}
+        {held}
       </Box>
     )
   })
