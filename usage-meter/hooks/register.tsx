@@ -156,29 +156,26 @@ export const register: Register = on => {
     const sorted = [...list].sort((a, b) => ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind))
     const taskPct = plan.length ? Math.round((plan.filter(s => s === 'completed').length / plan.length) * 100) : 0
     const taskLeft = plan.length ? leftText(plan, await read($, timing), now) : ''
+    // Each segment gets an equal share of the band: halves without a task, thirds with one.
+    // Task goes last, so Session and Week keep their order when a task starts or ends.
+    const segs = sorted.map(l => {
+      const color = l.percentUsed >= 90 ? MIDNIGHT.red : l.percentUsed >= 80 ? MIDNIGHT.yellow : MIDNIGHT.purple
+      return { key: l.kind, label: NAMES[l.kind] ?? l.kind, pct: l.percentUsed, color, extra: untilText(l.resetsAt, now) }
+    })
+    if (plan.length > 0) segs.push({ key: 'task', label: 'Task', pct: taskPct, color: MIDNIGHT.purple, extra: taskLeft })
+    // Equal-width segments (flex basis 0, grow 1), each centred between its dividers or the band's edge.
     return (
-      <Box key="usage" backgroundColor={MIDNIGHT.bg} paddingX={1}>
-        {sorted.map((l, i) => {
-          const color = l.percentUsed >= 90 ? MIDNIGHT.red : l.percentUsed >= 80 ? MIDNIGHT.yellow : MIDNIGHT.purple
-          const until = untilText(l.resetsAt, now)
-          return (
-            <Text key={l.kind}>
-              {i > 0 ? <Text color={MIDNIGHT.divider}>{' | '}</Text> : null}
-              <Text weight="bold" color={color}>{NAMES[l.kind] ?? l.kind} </Text>
-              <Text color={color}>{bar(l.percentUsed)} {l.percentUsed}%</Text>
-              {until ? <Text color={MIDNIGHT.muted}>{' ' + until}</Text> : null}
+      <Box key="usage" backgroundColor={MIDNIGHT.bg} paddingX={1} width="100%" flexDirection="row">
+        {segs.flatMap((s, i) => [
+          ...(i > 0 ? [<Text key={`div-${s.key}`} color={MIDNIGHT.divider}>|</Text>] : []),
+          <Box key={s.key} width={0} flexGrow={1} flexDirection="row" justifyContent="center">
+            <Text>
+              <Text weight="bold" color={s.color}>{s.label} </Text>
+              <Text color={s.color}>{bar(s.pct)} {s.pct}%</Text>
+              {s.extra ? <Text color={MIDNIGHT.muted}>{' ' + s.extra}</Text> : null}
             </Text>
-          )
-        })}
-        {/* Task goes last, so Session and Week never move when a task starts or ends. */}
-        {plan.length > 0 ? (
-          <Text key="task">
-            {sorted.length > 0 ? <Text color={MIDNIGHT.divider}>{' | '}</Text> : null}
-            <Text weight="bold" color={MIDNIGHT.purple}>Task </Text>
-            <Text color={MIDNIGHT.purple}>{bar(taskPct)} {taskPct}%</Text>
-            {taskLeft ? <Text color={MIDNIGHT.muted}>{' ' + taskLeft}</Text> : null}
-          </Text>
-        ) : null}
+          </Box>,
+        ])}
       </Box>
     )
   })
