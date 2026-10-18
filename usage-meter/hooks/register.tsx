@@ -124,24 +124,26 @@ export const register: Register = on => {
     const taskPct = plan.length ? Math.round((plan.filter(s => s === 'completed').length / plan.length) * 100) : 0
     return (
       <Box key="usage" backgroundColor={MIDNIGHT.bg} paddingX={1}>
-        {plan.length > 0 ? (
-          <Text key="task">
-            <Text weight="bold" color={MIDNIGHT.purple}>Task </Text>
-            <Text color={MIDNIGHT.purple}>{bar(taskPct)} {taskPct}%</Text>
-          </Text>
-        ) : null}
         {sorted.map((l, i) => {
           const color = l.percentUsed >= 90 ? MIDNIGHT.red : l.percentUsed >= 80 ? MIDNIGHT.yellow : MIDNIGHT.purple
           const until = untilText(l.resetsAt, now)
           return (
             <Text key={l.kind}>
-              {i > 0 || plan.length > 0 ? <Text color={MIDNIGHT.divider}>{'   |   '}</Text> : null}
+              {i > 0 ? <Text color={MIDNIGHT.divider}>{'   |   '}</Text> : null}
               <Text weight="bold" color={color}>{NAMES[l.kind] ?? l.kind} </Text>
               <Text color={color}>{bar(l.percentUsed)} {l.percentUsed}%</Text>
               {until ? <Text color={MIDNIGHT.muted}>{'  ' + until}</Text> : null}
             </Text>
           )
         })}
+        {/* Task goes last, so Session and Week never move when a task starts or ends. */}
+        {plan.length > 0 ? (
+          <Text key="task">
+            {sorted.length > 0 ? <Text color={MIDNIGHT.divider}>{'   |   '}</Text> : null}
+            <Text weight="bold" color={MIDNIGHT.purple}>Task </Text>
+            <Text color={MIDNIGHT.purple}>{bar(taskPct)} {taskPct}%</Text>
+          </Text>
+        ) : null}
       </Box>
     )
   })
