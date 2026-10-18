@@ -4,6 +4,6 @@ export type TaskTiming = { startedAt: number; lastDoneAt: number; done: number; 
 
 declare module 'claude-code' {
   interface PluginState {
-    'usage-meter': { limits: Limit[]; warned: string[]; steps: StepStatus[]; timing: TaskTiming }
+    'usage-meter': { limits: Limit[]; warned: string[]; steps: StepStatus[]; timing: TaskTiming; readAt: number }
   }
 }

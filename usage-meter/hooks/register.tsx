@@ -7,6 +7,11 @@ import type { Limit, StepStatus, TaskTiming } from '../types'
 const limits = atom({ plugin: 'usage-meter', key: 'limits' } as const, [] as Limit[])
 // Windows already warned about at 90%, so the toast shows once per window.
 const warned = atom({ plugin: 'usage-meter', key: 'warned' } as const, [] as string[])
+// When `limits` was read. Readings are shared through $.store, so every session on this
+// computer shows the newest one, even a session that has been idle for hours.
+const readAt = atom({ plugin: 'usage-meter', key: 'readAt' } as const, 0)
+const LATEST = 'latest'
+type Latest = { at: number; limits: Limit[] }
 // Claude's task list in the desktop app (update_plan), one status per step.
 const steps = atom({ plugin: 'usage-meter', key: 'steps' } as const, [] as StepStatus[])
 // When the task list started and when its latest step was checked off, for the time-left guess.
@@ -81,8 +86,12 @@ function applyPlan(prev: StepStatus[], call: PlanCall): StepStatus[] {
 }
 
 async function store($: EngineInterface, list: Limit[]): Promise<void> {
+  if (list.length === 0) return
   const clean = list.map(l => ({ kind: l.kind, percentUsed: l.percentUsed, resetsAt: l.resetsAt }))
+  const at = await $.clock.now()
   await update($, limits, () => clean)
+  await update($, readAt, () => at)
+  await $.store.set(LATEST, { at, limits: clean } as Latest)
   const already = await read($, warned)
   for (const l of clean) {
     const tag = `${l.kind}@${l.resetsAt ?? ''}`
@@ -93,21 +102,31 @@ async function store($: EngineInterface, list: Limit[]): Promise<void> {
   }
 }
 
+// Uses the reading in $.store when it is newer than this session's own.
+async function adoptNewest($: EngineInterface): Promise<void> {
+  const saved = (await $.store.get(LATEST)) as Latest | undefined
+  if (!saved || !Array.isArray(saved.limits)) return
+  if (saved.at > (await read($, readAt))) {
+    await update($, limits, () => saved.limits)
+    await update($, readAt, () => saved.at)
+  }
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const r = await next(e)
-    // Redraw every 15 s while a task runs, so the time left counts down. Local only: no model calls.
-    $.clock.every(15000, () => {
-      void read($, steps).then(list => {
-        if (list.some(s => s !== 'completed')) $.ui.invalidate('ui.render')
-      })
-    })
     try {
       const u = await $.session.usage()
       await store($, u.rateLimits)
     } catch {
       // no reading yet; session.measure fills it in after the first reply
     }
+    await adoptNewest($)
+    // Every 30 s: take a newer reading another session saved, and redraw so the reset
+    // countdowns and the task's time left keep moving while you're away. Local only: no model calls.
+    $.clock.every(30000, () => {
+      void adoptNewest($).then(() => $.ui.invalidate('ui.render'))
+    })
     return r
   })
 
@@ -159,8 +178,11 @@ export const register: Register = on => {
     // Each segment gets an equal share of the band: halves without a task, thirds with one.
     // Task goes last, so Session and Week keep their order when a task starts or ends.
     const segs = sorted.map(l => {
-      const color = l.percentUsed >= 90 ? MIDNIGHT.red : l.percentUsed >= 80 ? MIDNIGHT.yellow : MIDNIGHT.purple
-      return { key: l.kind, label: NAMES[l.kind] ?? l.kind, pct: l.percentUsed, color, extra: untilText(l.resetsAt, now) }
+      // Past its reset time the window has started over, whatever the last reading said.
+      const isReset = l.resetsAt !== undefined && Date.parse(l.resetsAt) <= now
+      const pct = isReset ? 0 : l.percentUsed
+      const color = pct >= 90 ? MIDNIGHT.red : pct >= 80 ? MIDNIGHT.yellow : MIDNIGHT.purple
+      return { key: l.kind, label: NAMES[l.kind] ?? l.kind, pct, color, extra: isReset ? '' : untilText(l.resetsAt, now) }
     })
     if (plan.length > 0) segs.push({ key: 'task', label: 'Task', pct: taskPct, color: MIDNIGHT.purple, extra: taskLeft })
     // Halves get bars twice as long as thirds, so two segments fill the band like three do.
