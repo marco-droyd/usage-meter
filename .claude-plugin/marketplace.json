@@ -1,0 +1,5 @@
+{
+  "name": "marc-mods",
+  "owner": { "name": "Marc" },
+  "plugins": [{ "name": "usage-meter", "source": "./usage-meter", "description": "Shows your plan's session and weekly usage above the message box" }]
+}

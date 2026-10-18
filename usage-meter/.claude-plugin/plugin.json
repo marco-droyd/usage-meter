@@ -1,0 +1,1 @@
+{ "name": "usage-meter", "version": "0.1.0", "description": "Shows your plan's session (5-hour) and weekly usage % above the message box, with a heads-up at 90%", "types": "./types/index.d.ts" }
