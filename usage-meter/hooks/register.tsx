@@ -49,9 +49,9 @@ function leftText(plan: StepStatus[], t: TaskTiming, now: number): string {
   const perStep = (t.lastDoneAt - t.startedAt) / finished
   const ms = perStep * left - (now - t.lastDoneAt)
   const mins = Math.round(ms / 60000)
-  if (mins < 1) return '~<1m left'
-  if (mins < 60) return `~${mins}m left`
-  return `~${Math.floor(mins / 60)}h ${mins % 60}m left`
+  if (mins < 1) return '1m left'
+  if (mins < 60) return `${mins}m left`
+  return `${Math.floor(mins / 60)}h ${mins % 60}m left`
 }
 
 type PlanCall = {
@@ -163,20 +163,20 @@ export const register: Register = on => {
           const until = untilText(l.resetsAt, now)
           return (
             <Text key={l.kind}>
-              {i > 0 ? <Text color={MIDNIGHT.divider}>{'   |   '}</Text> : null}
+              {i > 0 ? <Text color={MIDNIGHT.divider}>{' | '}</Text> : null}
               <Text weight="bold" color={color}>{NAMES[l.kind] ?? l.kind} </Text>
               <Text color={color}>{bar(l.percentUsed)} {l.percentUsed}%</Text>
-              {until ? <Text color={MIDNIGHT.muted}>{'  ' + until}</Text> : null}
+              {until ? <Text color={MIDNIGHT.muted}>{' ' + until}</Text> : null}
             </Text>
           )
         })}
         {/* Task goes last, so Session and Week never move when a task starts or ends. */}
         {plan.length > 0 ? (
           <Text key="task">
-            {sorted.length > 0 ? <Text color={MIDNIGHT.divider}>{'   |   '}</Text> : null}
+            {sorted.length > 0 ? <Text color={MIDNIGHT.divider}>{' | '}</Text> : null}
             <Text weight="bold" color={MIDNIGHT.purple}>Task </Text>
             <Text color={MIDNIGHT.purple}>{bar(taskPct)} {taskPct}%</Text>
-            {taskLeft ? <Text color={MIDNIGHT.muted}>{'  ' + taskLeft}</Text> : null}
+            {taskLeft ? <Text color={MIDNIGHT.muted}>{' ' + taskLeft}</Text> : null}
           </Text>
         ) : null}
       </Box>
