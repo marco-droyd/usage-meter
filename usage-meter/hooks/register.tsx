@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Limit, StepStatus } from '../types'
+import type { Limit, StepStatus, TaskTiming } from '../types'
 
 // The plan's rate-limit windows, as the engine reports them with each response.
 const limits = atom({ plugin: 'usage-meter', key: 'limits' } as const, [] as Limit[])
@@ -9,6 +9,8 @@ const limits = atom({ plugin: 'usage-meter', key: 'limits' } as const, [] as Lim
 const warned = atom({ plugin: 'usage-meter', key: 'warned' } as const, [] as string[])
 // Claude's task list in the desktop app (update_plan), one status per step.
 const steps = atom({ plugin: 'usage-meter', key: 'steps' } as const, [] as StepStatus[])
+// When the task list started and when its latest step was checked off, for the time-left guess.
+const timing = atom({ plugin: 'usage-meter', key: 'timing' } as const, { startedAt: 0, lastDoneAt: 0, done: 0, base: 0 } as TaskTiming)
 
 const PLAN_TOOL = 'mcp__ccd_turn__update_plan'
 const WRAP_TOOL = 'mcp__ccd_turn__wrap_up'
@@ -34,6 +36,22 @@ function untilText(resetsAt: string | undefined, now: number): string {
 function bar(pct: number): string {
   const filled = Math.max(0, Math.min(10, Math.round(pct / 10)))
   return '█'.repeat(filled) + '░'.repeat(10 - filled)
+}
+
+// Time left = average time per finished step so far x steps left, minus time already spent on
+// the current step. A guess: steps differ in size, so it firms up as more steps finish.
+function leftText(plan: StepStatus[], t: TaskTiming, now: number): string {
+  const left = plan.filter(s => s !== 'completed').length
+  if (left === 0) return ''
+  // Only steps finished since the list started count; ones already ticked when it arrived don't.
+  const finished = t.done - t.base
+  if (finished <= 0) return 'estimating'
+  const perStep = (t.lastDoneAt - t.startedAt) / finished
+  const ms = perStep * left - (now - t.lastDoneAt)
+  const mins = Math.round(ms / 60000)
+  if (mins < 1) return '~<1m left'
+  if (mins < 60) return `~${mins}m left`
+  return `~${Math.floor(mins / 60)}h ${mins % 60}m left`
 }
 
 type PlanCall = {
@@ -78,6 +96,12 @@ async function store($: EngineInterface, list: Limit[]): Promise<void> {
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const r = await next(e)
+    // Redraw every 15 s while a task runs, so the time left counts down. Local only: no model calls.
+    $.clock.every(15000, () => {
+      void read($, steps).then(list => {
+        if (list.some(s => s !== 'completed')) $.ui.invalidate('ui.render')
+      })
+    })
     try {
       const u = await $.session.usage()
       await store($, u.rateLimits)
@@ -95,7 +119,16 @@ export const register: Register = on => {
   on('tool.call', { tool: PLAN_TOOL }, async ($, e, next) => {
     const r = await next(e)
     if (r.deny === undefined && r.isError !== true) {
-      await update($, steps, prev => applyPlan(prev, e as unknown as PlanCall))
+      const prev = await read($, steps)
+      const now = await $.clock.now()
+      const fresh = prev.length === 0 || prev.every(s => s === 'completed')
+      const nextSteps = applyPlan(prev, e as unknown as PlanCall)
+      const doneNow = nextSteps.filter(s => s === 'completed').length
+      await update($, timing, t =>
+        fresh ? { startedAt: now, lastDoneAt: now, done: doneNow, base: doneNow }
+        : doneNow > t.done ? { ...t, lastDoneAt: now, done: doneNow }
+        : t)
+      await update($, steps, () => nextSteps)
     }
     return r
   })
@@ -122,6 +155,7 @@ export const register: Register = on => {
     const now = await $.clock.now()
     const sorted = [...list].sort((a, b) => ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind))
     const taskPct = plan.length ? Math.round((plan.filter(s => s === 'completed').length / plan.length) * 100) : 0
+    const taskLeft = plan.length ? leftText(plan, await read($, timing), now) : ''
     return (
       <Box key="usage" backgroundColor={MIDNIGHT.bg} paddingX={1}>
         {sorted.map((l, i) => {
@@ -142,6 +176,7 @@ export const register: Register = on => {
             {sorted.length > 0 ? <Text color={MIDNIGHT.divider}>{'   |   '}</Text> : null}
             <Text weight="bold" color={MIDNIGHT.purple}>Task </Text>
             <Text color={MIDNIGHT.purple}>{bar(taskPct)} {taskPct}%</Text>
+            {taskLeft ? <Text color={MIDNIGHT.muted}>{'  ' + taskLeft}</Text> : null}
           </Text>
         ) : null}
       </Box>
